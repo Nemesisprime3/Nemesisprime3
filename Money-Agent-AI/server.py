@@ -7,6 +7,7 @@ from urllib.error import HTTPError, URLError
 from pathlib import Path
 from datetime import datetime, timezone
 import json, threading, time, uuid, re, os
+import agent_runtime as AR
 ROOT=Path(__file__).resolve().parent
 STATE_FILE=ROOT/"money_agent_state.json"
 HOST,PORT="127.0.0.1",int(os.environ.get("MONEY_AGENT_PORT","8765"))
@@ -97,11 +98,68 @@ class Handler(BaseHTTPRequestHandler):
             try: self.send_json({"ok":True,"issues":github_issues((q.get("repo") or [""])[0],(q.get("limit") or ["20"])[0])})
             except Exception as e: event("GitHub API",str(e),"error"); self.send_json({"ok":False,"error":str(e)},400)
             return
+        if u.path=="/api/agents":
+            self.send_json({"ok":True,**AR.snapshot(),"max_workers":AR.MAX_WORKERS}); return
+        if u.path=="/api/wallet/status":
+            q=parse_qs(u.query)
+            try: self.send_json({"ok":True,"wallet":AR.wallet_status((q.get("address") or [""])[0])})
+            except Exception as e: self.send_json({"ok":False,"error":str(e)},400)
+            return
         self.send_json({"error":"Not found"},404)
     def do_POST(self):
         u=urlparse(self.path)
         try: d=self.body()
         except Exception: self.send_json({"error":"Invalid JSON"},400); return
+        if u.path=="/api/agents/spawn":
+            try:
+                agent=AR.spawn_agent(d.get("role","general"),d.get("purpose",""))
+                event("Orchestrator","Registered bounded logical worker "+agent["id"]+"; no separate AI model started.")
+                self.send_json({"ok":True,"agent":agent})
+            except Exception as e: self.send_json({"ok":False,"error":str(e)},400)
+            return
+        if u.path=="/api/opportunities/score":
+            try: self.send_json({"ok":True,"assessment":AR.score_opportunity(d)})
+            except Exception as e: self.send_json({"ok":False,"error":str(e)},400)
+            return
+        if u.path=="/api/actions/request":
+            try:
+                action=AR.request_action(d.get("type"),d.get("payload") or {})
+                event("Permissions","Action "+action["type"]+" requires explicit approval.")
+                self.send_json({"ok":True,"action":action})
+            except Exception as e: self.send_json({"ok":False,"error":str(e)},400)
+            return
+        if u.path=="/api/actions/approve":
+            action_id=str(d.get("action_id","")).strip()
+            action=AR.get_action(action_id)
+            if not action: self.send_json({"ok":False,"error":"Action request not found"},404); return
+            if action.get("status")!="pending_approval":
+                self.send_json({"ok":False,"error":"Only pending actions can be approved"},400); return
+            AR.finish_action(action_id,"approved","Approved by local operator.")
+            try:
+                kind=action["type"]; payload=action.get("payload") or {}
+                if kind=="pause_workers":
+                    with LOCK: STATE["paused"]=True; persist()
+                    result="Workers paused."
+                elif kind=="resume_workers":
+                    with LOCK: STATE["paused"]=False; persist()
+                    result="Workers resumed."
+                elif kind=="retry_task":
+                    with LOCK:
+                        task=next((x for x in STATE["tasks"] if x["id"]==payload.get("task_id")),None)
+                        if not task: raise ValueError("Task not found.")
+                        if task["processing_status"] not in {"failed","completed"}: raise ValueError("Only completed or failed local tasks can be retried.")
+                        task["processing_status"]="queued"; task["result"]=""; task["error"]=""; task["updated_at"]=now(); persist()
+                    result="Task requeued for local processing."
+                else:
+                    raise ValueError("Action is not permitted.")
+                final=AR.finish_action(action_id,"executed",result)
+                event("Permissions","Approved action executed: "+kind,"success")
+                self.send_json({"ok":True,"action":final})
+            except Exception as e:
+                final=AR.finish_action(action_id,"failed",str(e))
+                event("Permissions","Approved action failed: "+str(e),"error")
+                self.send_json({"ok":False,"error":str(e),"action":final},400)
+            return
         if u.path=="/api/tasks":
             kind=str(d.get("kind","custom"))
             if kind not in {"listing","lead","deal","custom","github_issue"}: self.send_json({"error":"Unsupported task type"},400); return
