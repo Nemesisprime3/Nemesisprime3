@@ -10,6 +10,14 @@
 <div class="card"><h2>Task queue & lifecycle</h2><p class="muted">Local processing completion is not completion of paid work.</p><div id="tasks" class="list">Waiting for backend…</div></div>
 <div class="card"><h2>Activity feed</h2><div id="events" class="list">Waiting for events…</div></div>
 <div class="card"><h2>Record received payout</h2><div class="notice">Only enter money actually received and a real receipt/reference.</div><label>Amount</label><input id="amount" type="number" min="0.01" step="0.01"><label>Currency</label><select id="currency"><option>USD</option><option>NGN</option><option>GBP</option><option>EUR</option></select><label>Receipt / transaction reference</label><input id="evidence"><button id="record">Record payout</button><div id="payouts" class="list"></div></div>
+<div class="card wide"><h2>Agent runtime & read-only testnet wallet</h2>
+<div class="notice">Logical worker slots only: no separate AI model is connected. Wallet monitoring reads a public address balance only; it cannot send transactions.</div>
+<div class="row"><div><label>Worker role</label><select id="agentRole"><option value="research">Research</option><option value="delivery">Deliverable preparation</option><option value="quality">Quality review</option><option value="recovery">Recovery monitor</option><option value="general">General</option></select></div><div><label>Worker purpose</label><input id="agentPurpose" placeholder="e.g. review eligible paid task leads"></div></div>
+<button id="spawnAgent">Register worker slot</button><div id="agentList" class="list"></div>
+<div class="row"><div><label>Public EVM testnet address</label><input id="walletAddress" placeholder="0x… (public address only)"></div><div><label>Balance monitor</label><button id="checkWallet">Check read-only balance</button></div></div><div id="walletStatus" class="status">No balance request made.</div>
+<div class="row"><div><label>Request a reversible action</label><select id="actionType"><option value="pause_workers">Pause workers</option><option value="resume_workers">Resume workers</option></select></div><div><label>Approval</label><button id="requestAction">Request action</button></div></div><div id="actionList" class="list"></div>
+<p class="muted">Set MONEY_AGENT_TESTNET_RPC_URL to an HTTPS testnet RPC endpoint before checking balances. Never enter a seed phrase or private key.</p>
+</div>
 <div class="card"><h2>Platform limits</h2><p class="muted">No paid-task platform, Zillow, or Upwork integration is connected. The local worker processes supported tasks but does not submit work or make money automatically. Android may stop background processes.</p><a href="https://docs.github.com/en/rest/issues" target="_blank" rel="noopener">GitHub API documentation</a></div></section>
 <footer class="foot">Local-only service · Python standard library · Never enter passwords, bank credentials, or private keys into task notes.</footer></main>
 <script>
@@ -40,5 +48,16 @@ $("fetch").onclick=async()=>{if(busy)return;busy=true;$("fetch").disabled=true;$
 document.addEventListener("click",async e=>{let a=e.target.closest("[data-add]");if(a){const i=issueCache[a.dataset.add];if(!i)return;try{await req("/api/tasks",{kind:"github_issue",title:i.title,source:"GitHub: "+i.repo,source_url:i.html_url,data:{repo:i.repo,number:i.number,body:i.body,labels:i.labels}});a.textContent="Queued";a.disabled=true;refresh()}catch(x){alert(x.message)}}let r=e.target.closest("[data-retry]");if(r){try{await req("/api/retry",{id:r.dataset.retry});refresh()}catch(x){alert(x.message)}}});
 document.addEventListener("change",async e=>{let s=e.target.closest("[data-work]");if(s){try{await req("/api/task-status",{id:s.dataset.work,work_status:s.value});refresh()}catch(x){alert(x.message)}}});
 $("record").onclick=async()=>{const amount=Number($("amount").value),evidence=$("evidence").value.trim();if(!(amount>0)||!evidence){alert("Enter an actual received amount and reference.");return}try{await req("/api/payouts",{amount,currency:$("currency").value,evidence});$("amount").value="";$("evidence").value="";refresh()}catch(e){alert(e.message)}};
-refresh();setInterval(refresh,1500);
+async function refreshRuntime(){
+ try{
+  const s=await req("/api/agents");
+  $("agentList").innerHTML=s.agents.length?s.agents.slice().reverse().map(a=>'<div class="item"><strong>'+esc(a.role)+' · '+esc(a.id)+'</strong><div class="muted">'+esc(a.status)+' · '+esc(a.created_at)+'</div><p>'+esc(a.purpose)+'</p><div class="muted">'+esc(a.note||"")+'</div></div>').join(""):'<div class="item">No worker slots registered.</div>';
+  $("actionList").innerHTML=s.actions.slice().reverse().slice(0,20).map(a=>'<div class="item"><strong>'+esc(a.type)+' · '+esc(a.status)+'</strong><div class="muted">'+esc(a.created_at)+'</div><p>'+esc(a.result||"Waiting for operator approval.")+'</p>'+(a.status==="pending_approval"?'<button data-approve="'+esc(a.id)+'">Approve and execute</button>':"")+'</div>').join("")||'<div class="item">No action requests.</div>';
+ }catch(e){$("agentList").textContent="Runtime unavailable: "+e.message}
+}
+$("spawnAgent").onclick=async()=>{const purpose=$("agentPurpose").value.trim();if(!purpose){alert("Enter a clear worker purpose.");return}try{await req("/api/agents/spawn",{role:$("agentRole").value,purpose});$("agentPurpose").value="";refreshRuntime()}catch(e){alert(e.message)}};
+$("requestAction").onclick=async()=>{try{await req("/api/actions/request",{type:$("actionType").value,payload:{}});refreshRuntime()}catch(e){alert(e.message)}};
+$("checkWallet").onclick=async()=>{const address=$("walletAddress").value.trim();if(!address){alert("Enter a public EVM address, not a private key.");return} $("walletStatus").textContent="Checking configured testnet RPC…";try{const j=await req("/api/wallet/status?address="+encodeURIComponent(address));const w=j.wallet;$("walletStatus").textContent=w.configured?"Read-only balance: "+w.balance_native+" native testnet coin · "+w.network+" · checked "+w.checked_at:w.message}catch(e){$("walletStatus").textContent="Wallet monitor: "+e.message}};
+document.addEventListener("click",async e=>{const b=e.target.closest("[data-approve]");if(!b)return;if(!confirm("Approve and execute this allowlisted local action?"))return;try{await req("/api/actions/approve",{action_id:b.dataset.approve});refresh();refreshRuntime()}catch(x){alert(x.message)}});
+refresh();refreshRuntime();setInterval(refresh,1500);setInterval(refreshRuntime,4000);
 </script></body></html>
