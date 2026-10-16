@@ -41,7 +41,7 @@ The feature branch `feature/agent-runtime-wallet-monitor` adds a standard-librar
 - A bounded registry of logical worker slots (default maximum 4; configurable up to 8 with `MONEY_AGENT_MAX_WORKERS`). These records are **not** independent AI models.
 - A transparent opportunity completeness score. It is a triage aid only and never verifies a payer or guarantees revenue.
 - A reversible-action allowlist with explicit local approval for pause/resume and retry of completed or failed local tasks.
-- Read-only EVM testnet native-balance checks. No private key is generated or stored, no transaction is signed, and no funds are sent.
+- Read-only EVM testnet native-balance checks. The configured RPC chain ID must match a supported testnet before the balance is queried. No private key is generated or stored, no transaction is signed, and no funds are sent.
 
 ### Optional read-only testnet balance monitor
 
