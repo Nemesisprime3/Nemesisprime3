@@ -66,6 +66,19 @@ def spawn_agent(role, purpose):
         _persist()
         return dict(agent)
 
+def retire_agent(agent_id):
+    agent_id = str(agent_id or "").strip()
+    with _LOCK:
+        agent = next((a for a in STATE["agents"] if a.get("id") == agent_id), None)
+        if not agent:
+            raise ValueError("Worker slot not found.")
+        if agent.get("status") == "working":
+            raise ValueError("A working slot cannot be retired.")
+        agent["status"] = "retired"
+        agent["retired_at"] = _now()
+        _persist()
+        return dict(agent)
+
 def request_action(action_type, payload):
     action_type = str(action_type or "")
     if action_type not in ALLOWED_ACTIONS:
