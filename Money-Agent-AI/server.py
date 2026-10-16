@@ -110,6 +110,13 @@ class Handler(BaseHTTPRequestHandler):
         u=urlparse(self.path)
         try: d=self.body()
         except Exception: self.send_json({"error":"Invalid JSON"},400); return
+        if u.path=="/api/agents/retire":
+            try:
+                agent=AR.retire_agent(d.get("agent_id"))
+                event("Orchestrator","Retired idle logical worker "+agent["id"]+".")
+                self.send_json({"ok":True,"agent":agent})
+            except Exception as e: self.send_json({"ok":False,"error":str(e)},400)
+            return
         if u.path=="/api/agents/spawn":
             try:
                 agent=AR.spawn_agent(d.get("role","general"),d.get("purpose",""))
