@@ -26,6 +26,11 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertEqual(result["decision"], "manual_review_required")
         self.assertIn("not independently verified", result["evidence"][1])
 
+    def test_opportunity_score_handles_non_string_source_url(self):
+        result = ar.score_opportunity({"source_url": None})
+        self.assertEqual(result["score"], 0)
+        self.assertEqual(result["decision"], "manual_review_required")
+
     def test_wallet_requires_valid_address(self):
         with self.assertRaises(ValueError):
             ar.wallet_status("not-an-address")
