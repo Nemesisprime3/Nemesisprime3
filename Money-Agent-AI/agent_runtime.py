@@ -135,34 +135,45 @@ def score_opportunity(item):
             "decision": "manual_review_required",
             "warning": "Heuristic only. Verify the source, terms, and payer before doing work."}
 
+def _rpc_call(rpc, method, params):
+    body = json.dumps({"jsonrpc": "2.0", "method": method, "params": params, "id": 1}).encode("utf-8")
+    req = Request(rpc, data=body, headers={"Content-Type": "application/json",
+                 "Accept": "application/json", "User-Agent": "MoneyAgentAI-readonly/1.0"})
+    try:
+        with urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, ValueError, OSError) as exc:
+        raise RuntimeError("Testnet RPC request failed: " + str(exc)[:180])
+    if data.get("error"):
+        raise RuntimeError("RPC error: " + str(data["error"])[:180])
+    return data.get("result")
+
 def wallet_status(address):
-    """Read native balance using a configured EVM testnet JSON-RPC endpoint."""
+    """Read native balance only after verifying the RPC reports a known EVM testnet."""
     address = str(address or "").strip()
     if not re.fullmatch(r"0x[a-fA-F0-9]{40}", address):
         raise ValueError("Enter a valid 0x-prefixed EVM address.")
     rpc = os.environ.get("MONEY_AGENT_TESTNET_RPC_URL", "").strip()
     if not rpc:
         return {"configured": False, "network": "testnet",
-                "message": "Set MONEY_AGENT_TESTNET_RPC_URL to an EVM testnet RPC endpoint. No network request was made.",
+                "message": "Set MONEY_AGENT_TESTNET_RPC_URL to an HTTPS EVM testnet RPC endpoint. No network request was made.",
                 "address": address, "balance_wei": None, "balance_native": None}
     if not rpc.startswith("https://"):
         raise ValueError("For safety, the testnet RPC endpoint must use HTTPS.")
-    body = json.dumps({"jsonrpc": "2.0", "method": "eth_getBalance",
-                       "params": [address, "latest"], "id": 1}).encode("utf-8")
-    req = Request(rpc, data=body, headers={"Content-Type": "application/json",
-                 "Accept": "application/json", "User-Agent": "MoneyAgentAI-readonly/1.0"})
-    try:
-        with urlopen(req, timeout=10) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
-        raise RuntimeError("Testnet balance request failed: " + str(exc)[:180])
-    if data.get("error"):
-        raise RuntimeError("RPC error: " + str(data["error"])[:180])
-    raw = data.get("result")
+    chain_raw = _rpc_call(rpc, "eth_chainId", [])
+    if not isinstance(chain_raw, str) or not re.fullmatch(r"0x[0-9a-fA-F]+", chain_raw):
+        raise RuntimeError("RPC returned an unexpected chain ID.")
+    chain_id = int(chain_raw, 16)
+    testnets = {11155111: "Sepolia", 17000: "Holesky", 80002: "Polygon Amoy",
+                84532: "Base Sepolia", 11155420: "OP Sepolia",
+                421614: "Arbitrum Sepolia", 97: "BNB Smart Chain Testnet"}
+    if chain_id not in testnets:
+        raise RuntimeError("Configured RPC is not a recognized supported testnet; balance was not queried.")
+    raw = _rpc_call(rpc, "eth_getBalance", [address, "latest"])
     if not isinstance(raw, str) or not re.fullmatch(r"0x[0-9a-fA-F]+", raw):
         raise RuntimeError("RPC returned an unexpected balance response.")
     wei = int(raw, 16)
-    return {"configured": True, "network": "configured EVM testnet",
+    return {"configured": True, "network": testnets[chain_id], "chain_id": chain_id,
             "address": address, "balance_wei": str(wei),
             "balance_native": format(wei / 10**18, ".8f"),
             "read_only": True, "transaction_sent": False, "checked_at": _now()}
