@@ -55,6 +55,7 @@ Never paste seed phrases or private keys into the app, task notes, or source cod
 - `GET /api/agents` — logical worker registry and pending action records.
 - `GET /api/wallet/status?address=0x...` — read-only balance monitor; needs the optional HTTPS RPC setting.
 - `POST /api/agents/spawn` — register a bounded logical worker slot.
+- `POST /api/agents/retire` — retire an idle logical worker slot.
 - `POST /api/opportunities/score` — score supplied opportunity metadata.
 - `POST /api/actions/request` — request an allowlisted action; starts in `pending_approval`.
 - `POST /api/actions/approve` — execute a pending allowlisted action after the operator approves it.
