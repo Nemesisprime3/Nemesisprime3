@@ -15,7 +15,7 @@ from urllib.error import URLError, HTTPError
 
 _LOCK = threading.RLock()
 _STATE_PATH = os.path.join(os.path.dirname(__file__), "agent_runtime_state.json")
-MAX_WORKERS = max(1, min(int(os.environ.get("MONEY_AGENT_MAX_WORKERS", "4")), 8))
+try:\n    _configured_workers = int(os.environ.get("MONEY_AGENT_MAX_WORKERS", "4"))\nexcept ValueError:\n    _configured_workers = 4\nMAX_WORKERS = max(1, min(_configured_workers, 8))
 ALLOWED_ACTIONS = {"pause_workers", "resume_workers", "retry_task"}
 STATE = {"agents": [], "actions": [], "updated_at": None}
 
@@ -119,7 +119,7 @@ def score_opportunity(item):
     item = item if isinstance(item, dict) else {}
     score = 0
     evidence = []
-    if item.get("source_url", "").startswith("https://"):
+    if str(item.get("source_url") or "").startswith("https://"):
         score += 15; evidence.append("HTTPS source supplied")
     if item.get("reward_amount") not in (None, "", 0, "0"):
         score += 25; evidence.append("reward amount stated; not independently verified")
