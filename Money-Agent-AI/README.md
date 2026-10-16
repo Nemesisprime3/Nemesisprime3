@@ -33,3 +33,36 @@ Then visit http://127.0.0.1:8765.
 6. Record a payout only after you actually receive it, with a reference.
 
 Official reference: https://docs.github.com/en/rest/issues
+
+
+## Bounded agent runtime upgrade
+
+The feature branch `feature/agent-runtime-wallet-monitor` adds a standard-library runtime module and HTTP endpoints for:
+- A bounded registry of logical worker slots (default maximum 4; configurable up to 8 with `MONEY_AGENT_MAX_WORKERS`). These records are **not** independent AI models.
+- A transparent opportunity completeness score. It is a triage aid only and never verifies a payer or guarantees revenue.
+- A reversible-action allowlist with explicit local approval for pause/resume and retry of completed or failed local tasks.
+- Read-only EVM testnet native-balance checks. No private key is generated or stored, no transaction is signed, and no funds are sent.
+
+### Optional read-only testnet balance monitor
+
+1. Set `MONEY_AGENT_TESTNET_RPC_URL` to an HTTPS RPC endpoint for the test network you choose.
+2. Restart the local server.
+3. Enter only the public EVM address in the dashboard's wallet monitor. If no RPC endpoint is configured, the endpoint reports that no request was made.
+
+Never paste seed phrases or private keys into the app, task notes, or source code. The wallet monitor calls only `eth_getBalance`; it does not submit transactions.
+
+### New API routes
+- `GET /api/agents` — logical worker registry and pending action records.
+- `GET /api/wallet/status?address=0x...` — read-only balance monitor; needs the optional HTTPS RPC setting.
+- `POST /api/agents/spawn` — register a bounded logical worker slot.
+- `POST /api/opportunities/score` — score supplied opportunity metadata.
+- `POST /api/actions/request` — request an allowlisted action; starts in `pending_approval`.
+- `POST /api/actions/approve` — execute a pending allowlisted action after the operator approves it.
+
+### Tests
+Run from this folder with Python 3.9+:
+```bash
+python -m unittest -v test_agent_runtime.py
+```
+
+The local server binds to loopback only by default. The new features do not connect a paid-task marketplace or AI model and do not claim that any income has been earned.
