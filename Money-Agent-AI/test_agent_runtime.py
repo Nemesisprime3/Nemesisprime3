@@ -36,6 +36,11 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertIsNone(result["balance_wei"])
         self.assertIn("No network request was made", result["message"])
 
+    def test_idle_worker_can_be_retired(self):
+        agent = ar.spawn_agent("test", "smoke test worker")
+        retired = ar.retire_agent(agent["id"])
+        self.assertEqual(retired["status"], "retired")
+
     def test_action_allowlist_rejects_unapproved_action_types(self):
         with self.assertRaises(ValueError):
             ar.request_action("send_transaction", {"to": "0x" + "a" * 40})
