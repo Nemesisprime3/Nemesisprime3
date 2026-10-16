@@ -119,7 +119,7 @@ class Handler(BaseHTTPRequestHandler):
             except: val=-1
             if not 0<=val<=100000: self.send_json({"error":"Target must be 0 to 100000"},400); return
             with LOCK: STATE["day_target_usd"]=val; persist()
-            event("System",f"Daily target set to $\u007bval:.2f}; goal is not earnings."); self.send_json({"ok":True,"target":val}); return
+            event("System","Daily target set to $"+format(val,".2f")+"; goal is not earnings."); self.send_json({"ok":True,"target":val}); return
         if u.path=="/api/task-status":
             tid=str(d.get("id","")); status=str(d.get("work_status",""))
             if status not in {"opportunity","selected","in_progress","submitted_by_user","accepted","paid","rejected","not_suitable"}: self.send_json({"error":"Invalid status"},400); return
